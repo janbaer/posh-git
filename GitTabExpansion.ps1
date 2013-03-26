@@ -83,6 +83,12 @@ function script:gitStashes($filter) {
         foreach { "'$_'" }
 }
 
+function script:gitTfsShelvesets($filter) {
+    (git tfs shelve-list) |
+        where { $_ -like "$filter*" } |
+        foreach { "'$_'" }
+}
+
 function script:gitFiles($filter, $files) {
     $files | sort |
         where { $_ -like "$filter*" } |
@@ -99,6 +105,18 @@ function script:gitAddFiles($filter) {
 
 function script:gitCheckoutFiles($filter) {
     gitFiles $filter (@($GitStatus.Working.Unmerged) + @($GitStatus.Working.Modified) + @($GitStatus.Working.Deleted))
+}
+
+function script:gitDiffFiles($filter, $staged) {
+    if ($staged) {
+        gitFiles $filter $GitStatus.Index.Modified
+    } else {
+        gitFiles $filter (@($GitStatus.Working.Unmerged) + @($GitStatus.Working.Modified) + @($GitStatus.Index.Modified))
+    }
+}
+
+function script:gitMergeFiles($filter) {
+    gitFiles $filter $GitStatus.Working.Unmerged
 }
 
 function script:gitDeleted($filter) {
@@ -164,6 +182,11 @@ function GitTabExpansion($lastBlock) {
             gitBranches $matches['ref'] $true
         }
 
+        # Handles git tfs unshelve <shelveset>
+        "^tfs +unshelve.* (?<shelveset>\S*)$" {
+            gitTfsShelvesets $matches['shelveset']
+        }
+
         # Handles git branch -d|-D|-m|-M <branch name>
         # Handles git branch <branch name> <start-point>
         "^branch.* (?<branch>\S*)$" {
@@ -222,6 +245,16 @@ function GitTabExpansion($lastBlock) {
         # Handles git rm <path>
         "^rm.* (?<index>\S*)$" {
             gitDeleted $matches['index']
+        }
+
+        # Handles git diff/difftool <path>
+        "^(?:diff|difftool)(?:.* (?<staged>(?:--cached|--staged))|.*) (?<files>\S*)$" {
+            gitDiffFiles $matches['files'] $matches['staged']
+        }
+
+        # Handles git merge/mergetool <path>
+        "^(?:merge|mergetool).* (?<files>\S*)$" {
+            gitMergeFiles $matches['files']
         }
 
         # Handles git <cmd> <ref>
